@@ -33,8 +33,8 @@ You'll need:
 
 ```bash
 # Clone and enter directory
-git clone https://github.com/takobaba/InstaRegrettam.git
-cd InstaRegrettam
+git clone https://github.com/takobaba/InstaRegretam.git
+cd InstaRegretam
 
 # Install dependencies (requires Python 3.14+)
 pip install -r requirements.txt

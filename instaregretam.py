@@ -8,14 +8,12 @@ import time
 import random
 import logging
 import platform
-import subprocess
 import signal
 import atexit
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Set
-from getpass import getpass
 from logging.handlers import RotatingFileHandler
 
 from dotenv import load_dotenv
@@ -33,7 +31,7 @@ logging.basicConfig(
 )
 
 # Default configuration
-CONFIG = {
+DEFAULT_CONFIG = {
     "delay": {"min": 30, "max": 120},
     "break": {"min": 600, "max": 1800, "probability": 0.05},
     "accounts": {},
@@ -58,16 +56,17 @@ class InstagramUnliker:
         self.logs_dir = Path("logs")
         self.running = True
         self.excluded_users: Set[str] = set()
+        self.config: dict = dict(DEFAULT_CONFIG)
 
         self._create_required_directories()
         self._setup_signal_handlers()
         self.setup_logging()
-        self.check_and_create_config()
+        self._load_config()
         self._load_excluded_users()
 
     def _load_excluded_users(self):
         """Load excluded users from config."""
-        self.excluded_users = set(CONFIG.get('excluded_users', []))
+        self.excluded_users = set(self.config.get('excluded_users', []))
         logging.info(f"Loaded {len(self.excluded_users)} excluded users")
 
     def _setup_signal_handlers(self):
@@ -139,26 +138,46 @@ class InstagramUnliker:
         print(f"{Fore.GREEN}[✓] Python version check passed ({version.major}.{version.minor}){Style.RESET_ALL}")
         return True
 
-    def check_and_create_config(self):
+    def _load_config(self):
         """Create or load configuration file."""
         if not os.path.exists(self.config_file):
             with open(self.config_file, 'w') as f:
-                json.dump(CONFIG, f, indent=4)
+                json.dump(self.config, f, indent=4)
             print(f"{Fore.GREEN}[✓] Created default configuration file{Style.RESET_ALL}")
         else:
             try:
                 with open(self.config_file, 'r') as f:
                     loaded_config = json.load(f)
                     for key, value in loaded_config.items():
-                        if key in CONFIG:
-                            CONFIG[key] = value
+                        if key in self.config:
+                            self.config[key] = value
+                self._validate_config()
                 print(f"{Fore.GREEN}[✓] Loaded existing configuration{Style.RESET_ALL}")
             except json.JSONDecodeError:
                 print(f"{Fore.RED}[✗] Error: Corrupted configuration file{Style.RESET_ALL}")
                 backup_file = f"{self.config_file}.bak"
                 os.rename(self.config_file, backup_file)
                 print(f"{Fore.YELLOW}[!] Backed up corrupted config to {backup_file}{Style.RESET_ALL}")
-                self.check_and_create_config()
+                self._load_config()
+
+    def _validate_config(self):
+        """Validate and clamp configuration values to safe ranges."""
+        # Delay values must be non-negative
+        self.config['delay']['min'] = max(0, self.config['delay']['min'])
+        self.config['delay']['max'] = max(self.config['delay']['min'], self.config['delay']['max'])
+
+        # Break values must be non-negative
+        self.config['break']['min'] = max(0, self.config['break']['min'])
+        self.config['break']['max'] = max(self.config['break']['min'], self.config['break']['max'])
+        self.config['break']['probability'] = max(0.0, min(1.0, self.config['break']['probability']))
+
+        # Limits must be positive
+        self.config['hourly_limit'] = max(1, int(self.config.get('hourly_limit', 60)))
+        self.config['daily_limit'] = max(1, int(self.config.get('daily_limit', 400)))
+
+        # Retry settings must be positive
+        self.config['max_retries'] = max(1, int(self.config.get('max_retries', 3)))
+        self.config['retry_delay'] = max(1, int(self.config.get('retry_delay', 60)))
 
     def add_account(self):
         """Add an Instagram account."""
@@ -193,7 +212,7 @@ class InstagramUnliker:
             with open(account_file, 'w') as f:
                 json.dump(account_data, f, indent=4)
 
-            CONFIG['accounts'][username] = {"enabled": True, "delay_multiplier": 1.0}
+            self.config['accounts'][username] = {"enabled": True, "delay_multiplier": 1.0}
             self.save_config()
             print(f"{Fore.GREEN}✨ Account @{username} added successfully!{Style.RESET_ALL}")
         except Exception as e:
@@ -229,8 +248,8 @@ class InstagramUnliker:
             account_file = self.accounts_dir / f"{username}.json"
             if account_file.exists():
                 account_file.unlink()
-            if username in CONFIG['accounts']:
-                del CONFIG['accounts'][username]
+            if username in self.config['accounts']:
+                del self.config['accounts'][username]
                 self.save_config()
 
             print(f"{Fore.GREEN}[✓] Account {username} removed successfully{Style.RESET_ALL}")
@@ -266,7 +285,7 @@ class InstagramUnliker:
                 username = input(f"{Style.BRIGHT}Enter username to exclude: {Style.RESET_ALL}").strip().lower()
                 if username:
                     self.excluded_users.add(username)
-                    CONFIG['excluded_users'] = list(self.excluded_users)
+                    self.config['excluded_users'] = list(self.excluded_users)
                     self.save_config()
                     print(f"{Fore.GREEN}✓ Added @{username} to exclude list{Style.RESET_ALL}")
             elif choice == "2":
@@ -276,7 +295,7 @@ class InstagramUnliker:
                 username = input(f"{Style.BRIGHT}Enter username to remove: {Style.RESET_ALL}").strip().lower()
                 if username in self.excluded_users:
                     self.excluded_users.remove(username)
-                    CONFIG['excluded_users'] = list(self.excluded_users)
+                    self.config['excluded_users'] = list(self.excluded_users)
                     self.save_config()
                     print(f"{Fore.GREEN}✓ Removed @{username} from exclude list{Style.RESET_ALL}")
                 else:
@@ -286,7 +305,7 @@ class InstagramUnliker:
                     confirm = input(f"{Fore.YELLOW}Clear all excluded users? (y/N): {Style.RESET_ALL}").lower()
                     if confirm == 'y':
                         self.excluded_users.clear()
-                        CONFIG['excluded_users'] = []
+                        self.config['excluded_users'] = []
                         self.save_config()
                         print(f"{Fore.GREEN}✓ Cleared all excluded users{Style.RESET_ALL}")
             elif choice == "4":
@@ -352,7 +371,7 @@ class InstagramUnliker:
 
             new_count = len(following_usernames - self.excluded_users)
             self.excluded_users.update(following_usernames)
-            CONFIG['excluded_users'] = list(self.excluded_users)
+            self.config['excluded_users'] = list(self.excluded_users)
             self.save_config()
 
             print(f"\n{Fore.GREEN}✓ Imported {len(following_usernames)} users from {following_file}{Style.RESET_ALL}")
@@ -381,15 +400,17 @@ class InstagramUnliker:
         """Save current configuration."""
         try:
             with open(self.config_file, 'w') as f:
-                json.dump(CONFIG, f, indent=4)
+                json.dump(self.config, f, indent=4)
         except Exception as e:
             print(f"{Fore.RED}[✗] Failed to save configuration: {e}{Style.RESET_ALL}")
 
-    def unlike_posts(self, username: str):
-        """Unlike posts using JSON file with exclude list support."""
-        progress_bar = None
+    # --- Unlike workflow (broken into smaller methods) ---
 
-        # Load credentials: .env first, then accounts/ JSON fallback
+    def _load_credentials(self, username: str) -> tuple[Optional[dict], Optional[Path]]:
+        """Load account credentials from .env or accounts/ JSON file.
+
+        Returns (account_data, account_file) or (None, None) on failure.
+        """
         env_user = os.getenv('INSTAGRAM_USERNAME')
         env_pass = os.getenv('INSTAGRAM_PASSWORD')
         env_totp = os.getenv('INSTAGRAM_TOTP_KEY')
@@ -401,52 +422,282 @@ class InstagramUnliker:
                 'totp_token': env_totp,
                 'total_unliked': 0,
             }
-            account_file = None
+            return account_data, None
+
+        account_file = self.accounts_dir / f"{username}.json"
+        if not account_file.exists():
+            print(f"\n{Fore.RED}[✗] No credentials found for {username}. Set up .env or add account.{Style.RESET_ALL}")
+            return None, None
+        with open(account_file, 'r') as f:
+            account_data = json.load(f)
+        return account_data, account_file
+
+    def _login(self, account_data: dict, username: str):
+        """Authenticate with Instagram via saved session or fresh login.
+
+        Returns an authenticated instagrapi Client, or raises on failure.
+        """
+        from ensta import Web
+        from instagrapi import Client as InstaClient
+
+        cl = InstaClient()
+        cl.delay_range = [1, 3]
+        session_file = f"accounts/{username}_session.json"
+
+        # Try loading saved session first
+        if os.path.exists(session_file):
+            try:
+                cl.load_settings(session_file)
+                cl.login_by_sessionid(cl.settings.get('authorization_data', {}).get('sessionid', ''))
+                cl.account_info()
+                print(f"{Fore.GREEN}✓ Resumed saved session{Style.RESET_ALL}")
+                return cl
+            except Exception:
+                logging.info("Saved session expired, doing fresh login")
+
+        # Fresh login via ensta
+        totp_key = account_data.get('totp_token', None)
+        web = Web(account_data['username'], account_data['password'], totp_token=totp_key)
+        session_id = {c.name: c.value for c in web.request_session.cookies}.get('sessionid', '')
+        cl = InstaClient()
+        cl.delay_range = [1, 3]
+        cl.login_by_sessionid(session_id)
+        cl.dump_settings(session_file)
+        print(f"{Fore.GREEN}✓ Fresh login successful (session saved){Style.RESET_ALL}")
+        return cl
+
+    def _load_posts(self) -> tuple[Optional[list], Optional[bool]]:
+        """Load and filter liked posts from JSON export.
+
+        Returns (posts_list, is_list_format) or (None, None) on failure.
+        """
+        if not os.path.exists('liked_posts.json'):
+            logging.error("liked_posts.json file not found")
+            print(f"{Fore.RED}[✗] liked_posts.json file not found. Please ensure it exists.{Style.RESET_ALL}")
+            return None, None
+
+        with open('liked_posts.json', 'r') as f:
+            liked_data = json.load(f)
+
+        if isinstance(liked_data, list):
+            posts_list = liked_data
+            is_list_format = True
+        elif isinstance(liked_data, dict) and liked_data.get('likes_media_likes'):
+            posts_list = liked_data['likes_media_likes']
+            is_list_format = False
         else:
-            account_file = self.accounts_dir / f"{username}.json"
-            if not account_file.exists():
-                print(f"\n{Fore.RED}[✗] No credentials found for {username}. Set up .env or add account.{Style.RESET_ALL}")
-                return
-            with open(account_file, 'r') as f:
-                account_data = json.load(f)
+            print(f"{Fore.YELLOW}[!] No liked posts found in JSON file!{Style.RESET_ALL}")
+            return None, None
+
+        # Filter out excluded users
+        original_count = len(posts_list)
+        filtered_posts = [
+            post for post in posts_list
+            if _get_post_owner(post) not in self.excluded_users
+        ]
+        excluded_count = original_count - len(filtered_posts)
+
+        if excluded_count > 0:
+            print(f"{Fore.YELLOW}🚫 Skipped {excluded_count} posts from excluded users{Style.RESET_ALL}")
+
+        return filtered_posts, is_list_format
+
+    def _save_progress(self, posts_list: list, is_list_format: bool):
+        """Save remaining posts back to liked_posts.json."""
+        if is_list_format:
+            save_data = posts_list
+        else:
+            save_data = {"likes_media_likes": posts_list}
+        with open('liked_posts.json', 'w') as f:
+            json.dump(save_data, f, indent=4)
+
+    def _get_speed_label(self) -> str:
+        """Get human-readable label for current speed mode."""
+        delay_min = self.config['delay']['min']
+        return {2: "AGGRESSIVE", 3: "FAST", 10: "MODERATE", 30: "SAFE"}.get(
+            delay_min, "YOLO" if delay_min < 1 else "CUSTOM"
+        )
+
+    def _handle_action_block(self, error, href: str, unliked_count: int,
+                             account_data: dict, account_file: Optional[Path]):
+        """Handle Instagram action block — log, save, and exit."""
+        request_log = self.logs_dir / "requests.log"
+        speed_label = self._get_speed_label()
+        with open(request_log, 'a') as log:
+            log.write(f"{datetime.now().isoformat()} | BLOCKED | {href} | {str(error)[:200]} | speed={speed_label} | unliked={unliked_count}\n")
+
+        print(f"\n{Fore.RED}{'='*60}")
+        print("🚨 ACTION BLOCKED — Instagram has rate-limited your account!")
+        print(f"{'='*60}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}• Your account is NOT banned, just temporarily restricted")
+        print("• Wait 24-48 hours before running again")
+        print("• Progress has been saved — it will resume where you left off")
+        print(f"• Unliked so far this session: {unliked_count}{Style.RESET_ALL}")
+
+        if account_file:
+            account_data['last_run'] = datetime.now().isoformat()
+            with open(account_file, 'w') as f:
+                json.dump(account_data, f, indent=4)
+        sys.exit(1)
+
+    def _unlike_loop(self, cl, posts_list: list, is_list_format: bool,
+                     account_data: dict, account_file: Optional[Path], username: str):
+        """Core unlike loop with rate limiting, retries, and progress tracking."""
+        from instagrapi.exceptions import ClientThrottledError, PleaseWaitFewMinutes, FeedbackRequired
+
+        total_posts = len(posts_list)
+        unliked_count = 0
+        skipped_count = 0
+        hourly_limit = self.config.get('hourly_limit', 60)
+        daily_limit = self.config.get('daily_limit', 400)
+        hourly_count = 0
+        hourly_start = time.time()
+        consecutive_errors = 0
+        request_log = self.logs_dir / "requests.log"
+
+        print(f"{Fore.BLUE}Found {total_posts} posts to unlike{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}⚡ Limits: {hourly_limit}/hour, {daily_limit}/day{Style.RESET_ALL}")
+
+        progress_bar = tqdm(
+            total=total_posts,
+            desc="🔄 Unliking posts",
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [ETA: {remaining}]'
+        )
+
+        try:
+            while posts_list and self.running:
+                # Check daily limit
+                if unliked_count >= daily_limit:
+                    progress_bar.write(f"{Fore.YELLOW}⚠️  Daily limit ({daily_limit}) reached. Stopping to protect your account.{Style.RESET_ALL}")
+                    break
+
+                # Check hourly limit
+                if hourly_count >= hourly_limit:
+                    elapsed = time.time() - hourly_start
+                    if elapsed < 3600:
+                        wait_time = 3600 - elapsed + random.uniform(60, 300)
+                        progress_bar.write(f"{Fore.YELLOW}⚠️  Hourly limit reached. Pausing {wait_time/60:.0f} min...{Style.RESET_ALL}")
+                        time.sleep(wait_time)
+                    hourly_count = 0
+                    hourly_start = time.time()
+
+                href = None
+                try:
+                    post = posts_list.pop(0)
+                    post_username = _get_post_owner(post)
+
+                    # Double-check exclusion
+                    if post_username and post_username in self.excluded_users:
+                        skipped_count += 1
+                        progress_bar.update(1)
+                        continue
+
+                    # Extract URL (supports both old and new format)
+                    href = _get_post_href(post)
+                    if not href:
+                        logging.warning(f"Skipping post with missing link data: {post.get('title', 'unknown')}")
+                        skipped_count += 1
+                        progress_bar.update(1)
+                        continue
+
+                    # Delay before unlike
+                    base_delay = random.uniform(self.config['delay']['min'], self.config['delay']['max'])
+                    actual_delay = base_delay * self.config['accounts'].get(username, {}).get('delay_multiplier', 1.0)
+                    time.sleep(actual_delay)
+
+                    media_id = cl.media_pk_from_url(href)
+
+                    # Unlike with retry + exponential backoff
+                    for retry in range(self.config['max_retries']):
+                        try:
+                            result = cl.media_unlike(media_id)
+                            if not result:
+                                raise Exception(f"Unlike returned False for {href}")
+                            consecutive_errors = 0
+                            break
+                        except (ClientThrottledError, PleaseWaitFewMinutes, FeedbackRequired) as e:
+                            # Immediate stop — do not retry these
+                            raise
+                        except Exception as e:
+                            error_msg = str(e)
+                            status_code = getattr(e, 'status_code', None) or re.search(r'\b(\d{3})\b', error_msg)
+                            if status_code and hasattr(status_code, 'group'):
+                                status_code = status_code.group(1)
+                            logging.warning(f"Failed to unlike (attempt {retry + 1}/{self.config['max_retries']}): [HTTP {status_code}] {e}")
+                            if retry < self.config['max_retries'] - 1:
+                                backoff = self.config['retry_delay'] * (2 ** retry)
+                                time.sleep(backoff)
+                            else:
+                                raise
+
+                    unliked_count += 1
+                    hourly_count += 1
+                    account_data['total_unliked'] += 1
+                    progress_bar.update(1)
+
+                    # Log the unliked post
+                    display_owner = post_username or '?'
+                    short_url = href.replace('https://www.instagram.com/', '')
+                    progress_bar.write(f"  {Fore.GREEN}✓{Style.RESET_ALL} {unliked_count}/{total_posts} — @{display_owner} — {short_url}")
+
+                    speed_label = self._get_speed_label()
+                    with open(request_log, 'a') as log:
+                        log.write(f"{datetime.now().isoformat()} | UNLIKE | {media_id} | @{display_owner} | {short_url} | OK | {speed_label}\n")
+
+                    # Save progress
+                    self._save_progress(posts_list, is_list_format)
+
+                    # Random break
+                    if random.random() < self.config['break']['probability']:
+                        break_time = random.uniform(self.config['break']['min'], self.config['break']['max'])
+                        progress_bar.write(f"{Fore.BLUE}[*] Taking a break for {break_time/60:.1f} minutes...{Style.RESET_ALL}")
+                        time.sleep(break_time)
+
+                except Exception as e:
+                    logging.error(f"Failed to unlike post: {e}", exc_info=True)
+                    progress_bar.write(f"{Fore.RED}[✗] Failed to unlike post: {e}{Style.RESET_ALL}")
+                    account_data['last_error'] = str(e)
+
+                    with open(request_log, 'a') as log:
+                        log.write(f"{datetime.now().isoformat()} | ERROR | {href or 'unknown'} | {str(e)[:100]}\n")
+
+                    # Detect action block
+                    block_keywords = ['action blocked', 'action_blocked', 'temporarily blocked',
+                                      'try again later', 'limit', 'challenge_required', 'checkpoint',
+                                      'login_required', 'consent_required', 'feedback_required',
+                                      'sentry_block', 'spam', '429', '403', '401',
+                                      'please wait', 'restricted', 'suspicious']
+                    if any(kw in str(e).lower() for kw in block_keywords):
+                        progress_bar.close()
+                        self._handle_action_block(e, href or 'unknown', unliked_count, account_data, account_file)
+
+                    consecutive_errors += 1
+                    cooldown = min(300 * (2 ** (consecutive_errors - 1)), 3600)
+                    progress_bar.write(f"{Fore.YELLOW}→ Cooldown {cooldown/60:.0f} min (errors: {consecutive_errors}){Style.RESET_ALL}")
+                    time.sleep(cooldown)
+
+                    if consecutive_errors >= 5:
+                        progress_bar.write(f"{Fore.RED}⚠️  Too many errors. Likely rate-limited. Stopping.{Style.RESET_ALL}")
+                        break
+        finally:
+            progress_bar.close()
+
+        return unliked_count, skipped_count
+
+    def unlike_posts(self, username: str):
+        """Unlike posts using JSON file with exclude list support."""
+        account_data, account_file = self._load_credentials(username)
+        if account_data is None:
+            return
 
         try:
             print(f"\n{Fore.CYAN}Starting to unlike posts for @{username}...{Style.RESET_ALL}")
             if self.excluded_users:
                 print(f"{Fore.YELLOW}ℹ️  Excluding {len(self.excluded_users)} users from unliking{Style.RESET_ALL}")
 
+            # Login
             try:
-                from ensta import Web
-                from instagrapi import Client as InstaClient
-                from instagrapi.exceptions import LoginRequired, ClientThrottledError, PleaseWaitFewMinutes, FeedbackRequired
-
-                cl = InstaClient()
-                cl.delay_range = [1, 3]
-                session_file = f"accounts/{username}_session.json"
-
-                # Try loading saved session first
-                logged_in = False
-                if os.path.exists(session_file):
-                    try:
-                        cl.load_settings(session_file)
-                        cl.login_by_sessionid(cl.settings.get('authorization_data', {}).get('sessionid', ''))
-                        cl.account_info()
-                        logged_in = True
-                        print(f"{Fore.GREEN}✓ Resumed saved session{Style.RESET_ALL}")
-                    except Exception:
-                        logging.info("Saved session expired, doing fresh login")
-
-                # Fresh login via ensta if session didn't work
-                if not logged_in:
-                    totp_key = account_data.get('totp_token', None)
-                    web = Web(account_data['username'], account_data['password'], totp_token=totp_key)
-                    session_id = {c.name: c.value for c in web.request_session.cookies}.get('sessionid', '')
-                    cl = InstaClient()
-                    cl.delay_range = [1, 3]
-                    cl.login_by_sessionid(session_id)
-                    cl.dump_settings(session_file)
-                    print(f"{Fore.GREEN}✓ Fresh login successful (session saved){Style.RESET_ALL}")
-
+                cl = self._login(account_data, username)
                 account_info = cl.account_info()
                 print(f"{Fore.GREEN}Logged in as: {Fore.CYAN}{account_info.username}{Style.RESET_ALL}")
             except Exception as e:
@@ -455,202 +706,19 @@ class InstagramUnliker:
                 print(f"→ Please check your username and password.{Style.RESET_ALL}")
                 return
 
-            if not os.path.exists('liked_posts.json'):
-                logging.error("liked_posts.json file not found")
-                print(f"{Fore.RED}[✗] liked_posts.json file not found. Please ensure it exists.{Style.RESET_ALL}")
+            # Load posts
+            posts_list, is_list_format = self._load_posts()
+            if posts_list is None:
                 return
 
-            try:
-                with open('liked_posts.json', 'r') as f:
-                    liked_data = json.load(f)
+            if len(posts_list) == 0:
+                print(f"{Fore.YELLOW}No posts to unlike after filtering{Style.RESET_ALL}")
+                return
 
-                # Handle both JSON formats:
-                # Old format: {"likes_media_likes": [...]}
-                # New format: [...] (plain list)
-                if isinstance(liked_data, list):
-                    posts_list = liked_data
-                    is_list_format = True
-                elif isinstance(liked_data, dict) and liked_data.get('likes_media_likes'):
-                    posts_list = liked_data['likes_media_likes']
-                    is_list_format = False
-                else:
-                    print(f"{Fore.YELLOW}[!] No liked posts found in JSON file!{Style.RESET_ALL}")
-                    return
-
-                # Filter out excluded users
-                original_count = len(posts_list)
-                filtered_posts = [
-                    post for post in posts_list
-                    if _get_post_owner(post) not in self.excluded_users
-                ]
-                excluded_count = original_count - len(filtered_posts)
-
-                if excluded_count > 0:
-                    print(f"{Fore.YELLOW}🚫 Skipped {excluded_count} posts from excluded users{Style.RESET_ALL}")
-
-                posts_list = filtered_posts
-                total_posts = len(filtered_posts)
-
-                if total_posts == 0:
-                    print(f"{Fore.YELLOW}No posts to unlike after filtering{Style.RESET_ALL}")
-                    return
-
-                unliked_count = 0
-                skipped_count = 0
-                hourly_limit = CONFIG.get('hourly_limit', 60)
-                daily_limit = CONFIG.get('daily_limit', 400)
-                hourly_count = 0
-                hourly_start = time.time()
-
-                print(f"{Fore.BLUE}Found {total_posts} posts to unlike{Style.RESET_ALL}")
-                print(f"{Fore.YELLOW}⚡ Limits: {hourly_limit}/hour, {daily_limit}/day{Style.RESET_ALL}")
-
-                progress_bar = tqdm(
-                    total=total_posts,
-                    desc="🔄 Unliking posts",
-                    bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [ETA: {remaining}]'
-                )
-
-                consecutive_errors = 0
-                request_log = self.logs_dir / "requests.log"
-
-                while posts_list and self.running:
-                    # Check daily limit
-                    if unliked_count >= daily_limit:
-                        progress_bar.write(f"{Fore.YELLOW}⚠️  Daily limit ({daily_limit}) reached. Stopping to protect your account.{Style.RESET_ALL}")
-                        break
-
-                    # Check hourly limit
-                    if hourly_count >= hourly_limit:
-                        elapsed = time.time() - hourly_start
-                        if elapsed < 3600:
-                            wait_time = 3600 - elapsed + random.uniform(60, 300)
-                            progress_bar.write(f"{Fore.YELLOW}⚠️  Hourly limit reached. Pausing {wait_time/60:.0f} min...{Style.RESET_ALL}")
-                            time.sleep(wait_time)
-                        hourly_count = 0
-                        hourly_start = time.time()
-
-                    try:
-                        post = posts_list.pop(0)
-                        post_username = _get_post_owner(post)
-
-                        # Double-check exclusion
-                        if post_username and post_username in self.excluded_users:
-                            skipped_count += 1
-                            progress_bar.update(1)
-                            continue
-
-                        # Extract URL (supports both old and new format)
-                        href = _get_post_href(post)
-                        if not href:
-                            logging.warning(f"Skipping post with missing link data: {post.get('title', 'unknown')}")
-                            skipped_count += 1
-                            progress_bar.update(1)
-                            continue
-
-                        # Delay before unlike
-                        base_delay = random.uniform(CONFIG['delay']['min'], CONFIG['delay']['max'])
-                        actual_delay = base_delay * CONFIG['accounts'].get(username, {}).get('delay_multiplier', 1.0)
-                        time.sleep(actual_delay)
-
-                        media_id = cl.media_pk_from_url(href)
-
-                        # Unlike with retry + exponential backoff
-                        for retry in range(CONFIG['max_retries']):
-                            try:
-                                result = cl.media_unlike(media_id)
-                                if not result:
-                                    raise Exception(f"Unlike returned False for {href}")
-                                consecutive_errors = 0
-                                break
-                            except (ClientThrottledError, PleaseWaitFewMinutes, FeedbackRequired) as e:
-                                # Immediate stop — do not retry these
-                                raise
-                            except Exception as e:
-                                error_msg = str(e)
-                                status_code = getattr(e, 'status_code', None) or re.search(r'\b(\d{3})\b', error_msg)
-                                if status_code and hasattr(status_code, 'group'):
-                                    status_code = status_code.group(1)
-                                logging.warning(f"Failed to unlike (attempt {retry + 1}/{CONFIG['max_retries']}): [HTTP {status_code}] {e}")
-                                if retry < CONFIG['max_retries'] - 1:
-                                    backoff = CONFIG['retry_delay'] * (2 ** retry)
-                                    time.sleep(backoff)
-                                else:
-                                    raise
-
-                        unliked_count += 1
-                        hourly_count += 1
-                        account_data['total_unliked'] += 1
-                        progress_bar.update(1)
-
-                        # Log the unliked post
-                        display_owner = post_username or '?'
-                        short_url = href.replace('https://www.instagram.com/', '')
-                        progress_bar.write(f"  {Fore.GREEN}✓{Style.RESET_ALL} {unliked_count}/{total_posts} — @{display_owner} — {short_url}")
-
-                        speed_label = {2: "AGGRESSIVE", 3: "FAST", 10: "MODERATE", 30: "SAFE"}.get(CONFIG['delay']['min'], "YOLO" if CONFIG['delay']['min'] < 1 else "CUSTOM")
-                        with open(request_log, 'a') as log:
-                            log.write(f"{datetime.now().isoformat()} | UNLIKE | {media_id} | @{display_owner} | {short_url} | OK | {speed_label}\n")
-
-                        # Save progress
-                        if is_list_format:
-                            save_data = posts_list
-                        else:
-                            liked_data['likes_media_likes'] = posts_list
-                            save_data = liked_data
-                        with open('liked_posts.json', 'w') as f:
-                            json.dump(save_data, f, indent=4)
-
-                        # Random break
-                        if random.random() < CONFIG['break']['probability']:
-                            break_time = random.uniform(CONFIG['break']['min'], CONFIG['break']['max'])
-                            progress_bar.write(f"{Fore.BLUE}[*] Taking a break for {break_time/60:.1f} minutes...{Style.RESET_ALL}")
-                            time.sleep(break_time)
-
-                    except Exception as e:
-                        logging.error(f"Failed to unlike post: {e}", exc_info=True)
-                        progress_bar.write(f"{Fore.RED}[✗] Failed to unlike post: {e}{Style.RESET_ALL}")
-                        account_data['last_error'] = str(e)
-
-                        with open(request_log, 'a') as log:
-                            log.write(f"{datetime.now().isoformat()} | ERROR | {href} | {str(e)[:100]}\n")
-
-                        # Detect action block
-                        block_keywords = ['action blocked', 'action_blocked', 'temporarily blocked',
-                                          'try again later', 'limit', 'challenge_required', 'checkpoint',
-                                          'login_required', 'consent_required', 'feedback_required',
-                                          'sentry_block', 'spam', '429', '403', '401',
-                                          'please wait', 'restricted', 'suspicious']
-                        if any(kw in str(e).lower() for kw in block_keywords):
-                            speed_label = {2: "AGGRESSIVE", 3: "FAST", 10: "MODERATE", 30: "SAFE"}.get(CONFIG['delay']['min'], "YOLO" if CONFIG['delay']['min'] < 1 else "CUSTOM")
-                            with open(request_log, 'a') as log:
-                                log.write(f"{datetime.now().isoformat()} | BLOCKED | {href} | {str(e)[:200]} | speed={speed_label} | unliked={unliked_count}\n")
-                            progress_bar.close()
-                            print(f"\n{Fore.RED}{'='*60}")
-                            print("🚨 ACTION BLOCKED — Instagram has rate-limited your account!")
-                            print(f"{'='*60}{Style.RESET_ALL}")
-                            print(f"{Fore.YELLOW}• Your account is NOT banned, just temporarily restricted")
-                            print("• Wait 24-48 hours before running again")
-                            print("• Progress has been saved — it will resume where you left off")
-                            print(f"• Unliked so far this session: {unliked_count}{Style.RESET_ALL}")
-                            if account_file:
-                                account_data['last_run'] = datetime.now().isoformat()
-                                with open(account_file, 'w') as f:
-                                    json.dump(account_data, f, indent=4)
-                            sys.exit(1)
-
-                        consecutive_errors += 1
-                        cooldown = min(300 * (2 ** (consecutive_errors - 1)), 3600)
-                        progress_bar.write(f"{Fore.YELLOW}→ Cooldown {cooldown/60:.0f} min (errors: {consecutive_errors}){Style.RESET_ALL}")
-                        time.sleep(cooldown)
-
-                        if consecutive_errors >= 5:
-                            progress_bar.write(f"{Fore.RED}⚠️  Too many errors. Likely rate-limited. Stopping.{Style.RESET_ALL}")
-                            break
-
-            finally:
-                if progress_bar is not None:
-                    progress_bar.close()
+            # Run unlike loop
+            unliked_count, skipped_count = self._unlike_loop(
+                cl, posts_list, is_list_format, account_data, account_file, username
+            )
 
             # Update account stats
             if account_file:
@@ -692,8 +760,8 @@ class InstagramUnliker:
                 print(f"{Fore.YELLOW}🚫 Excluding {len(self.excluded_users)} users{Style.RESET_ALL}")
 
             # Show current speed mode
-            delay_min = CONFIG['delay']['min']
-            delay_max = CONFIG['delay']['max']
+            delay_min = self.config['delay']['min']
+            delay_max = self.config['delay']['max']
             if delay_min < 1:
                 mode_label = f"{Fore.MAGENTA}🔥 YOLO{Style.RESET_ALL}"
             elif delay_min <= 2:
@@ -704,7 +772,7 @@ class InstagramUnliker:
                 mode_label = f"{Fore.YELLOW}🚀 MODERATE{Style.RESET_ALL}"
             else:
                 mode_label = f"{Fore.GREEN}🐢 SAFE{Style.RESET_ALL}"
-            print(f"\n{Fore.CYAN}Speed:{Style.RESET_ALL} {mode_label} ({delay_min}-{delay_max}s delay, {CONFIG.get('hourly_limit', 60)}/hr, {CONFIG.get('daily_limit', 400)}/day)")
+            print(f"\n{Fore.CYAN}Speed:{Style.RESET_ALL} {mode_label} ({delay_min}-{delay_max}s delay, {self.config.get('hourly_limit', 60)}/hr, {self.config.get('daily_limit', 400)}/day)")
 
             print(f"\n{Fore.CYAN}Available Actions:{Style.RESET_ALL}")
             print(f"╭{'─' * 40}╮")
@@ -831,17 +899,17 @@ class InstagramUnliker:
             print(f"╚══════════════════════════════════╝{Style.RESET_ALL}")
 
             print(f"\n{Fore.YELLOW}▸ Delay Settings{Style.RESET_ALL}")
-            print(f"  {Style.BRIGHT}1.{Style.RESET_ALL} Minimum Delay     : {Fore.GREEN}{CONFIG['delay']['min']}{Style.RESET_ALL} seconds")
-            print(f"  {Style.BRIGHT}2.{Style.RESET_ALL} Maximum Delay     : {Fore.GREEN}{CONFIG['delay']['max']}{Style.RESET_ALL} seconds")
+            print(f"  {Style.BRIGHT}1.{Style.RESET_ALL} Minimum Delay     : {Fore.GREEN}{self.config['delay']['min']}{Style.RESET_ALL} seconds")
+            print(f"  {Style.BRIGHT}2.{Style.RESET_ALL} Maximum Delay     : {Fore.GREEN}{self.config['delay']['max']}{Style.RESET_ALL} seconds")
 
             print(f"\n{Fore.YELLOW}▸ Break Settings{Style.RESET_ALL}")
-            print(f"  {Style.BRIGHT}3.{Style.RESET_ALL} Break Probability : {Fore.GREEN}{CONFIG['break']['probability'] * 100}%{Style.RESET_ALL}")
-            print(f"  {Style.BRIGHT}4.{Style.RESET_ALL} Minimum Break     : {Fore.GREEN}{CONFIG['break']['min'] / 60:.1f}{Style.RESET_ALL} minutes")
-            print(f"  {Style.BRIGHT}5.{Style.RESET_ALL} Maximum Break     : {Fore.GREEN}{CONFIG['break']['max'] / 60:.1f}{Style.RESET_ALL} minutes")
+            print(f"  {Style.BRIGHT}3.{Style.RESET_ALL} Break Probability : {Fore.GREEN}{self.config['break']['probability'] * 100}%{Style.RESET_ALL}")
+            print(f"  {Style.BRIGHT}4.{Style.RESET_ALL} Minimum Break     : {Fore.GREEN}{self.config['break']['min'] / 60:.1f}{Style.RESET_ALL} minutes")
+            print(f"  {Style.BRIGHT}5.{Style.RESET_ALL} Maximum Break     : {Fore.GREEN}{self.config['break']['max'] / 60:.1f}{Style.RESET_ALL} minutes")
 
             print(f"\n{Fore.YELLOW}▸ Retry Settings{Style.RESET_ALL}")
-            print(f"  {Style.BRIGHT}6.{Style.RESET_ALL} Maximum Retries   : {Fore.GREEN}{CONFIG['max_retries']}{Style.RESET_ALL}")
-            print(f"  {Style.BRIGHT}7.{Style.RESET_ALL} Retry Delay       : {Fore.GREEN}{CONFIG['retry_delay']}{Style.RESET_ALL} seconds")
+            print(f"  {Style.BRIGHT}6.{Style.RESET_ALL} Maximum Retries   : {Fore.GREEN}{self.config['max_retries']}{Style.RESET_ALL}")
+            print(f"  {Style.BRIGHT}7.{Style.RESET_ALL} Retry Delay       : {Fore.GREEN}{self.config['retry_delay']}{Style.RESET_ALL} seconds")
 
             print(f"\n{Fore.CYAN}▸ Navigation{Style.RESET_ALL}")
             print(f"  {Style.BRIGHT}0.{Style.RESET_ALL} Save and Return")
@@ -859,29 +927,49 @@ class InstagramUnliker:
                     print("╭─")
                     try:
                         if choice == "1":
-                            new_value = float(input("╰─▸ Enter new minimum delay (seconds): "))
-                            CONFIG['delay']['min'] = new_value
+                            new_value = float(input("╰─▸ Enter new minimum delay (seconds, ≥0): "))
+                            if new_value < 0:
+                                raise ValueError("Delay cannot be negative")
+                            self.config['delay']['min'] = new_value
+                            # Ensure max >= min
+                            if self.config['delay']['max'] < new_value:
+                                self.config['delay']['max'] = new_value
                         elif choice == "2":
-                            new_value = float(input("╰─▸ Enter new maximum delay (seconds): "))
-                            CONFIG['delay']['max'] = new_value
+                            new_value = float(input("╰─▸ Enter new maximum delay (seconds, ≥0): "))
+                            if new_value < 0:
+                                raise ValueError("Delay cannot be negative")
+                            if new_value < self.config['delay']['min']:
+                                raise ValueError(f"Max delay must be ≥ min delay ({self.config['delay']['min']})")
+                            self.config['delay']['max'] = new_value
                         elif choice == "3":
                             new_value = float(input("╰─▸ Enter new break probability (0-1): "))
-                            if 0 <= new_value <= 1:
-                                CONFIG['break']['probability'] = new_value
-                            else:
+                            if not (0 <= new_value <= 1):
                                 raise ValueError("Probability must be between 0 and 1")
+                            self.config['break']['probability'] = new_value
                         elif choice == "4":
-                            new_value = float(input("╰─▸ Enter new minimum break time (minutes): "))
-                            CONFIG['break']['min'] = new_value * 60
+                            new_value = float(input("╰─▸ Enter new minimum break time (minutes, ≥0): "))
+                            if new_value < 0:
+                                raise ValueError("Break time cannot be negative")
+                            self.config['break']['min'] = new_value * 60
+                            if self.config['break']['max'] < self.config['break']['min']:
+                                self.config['break']['max'] = self.config['break']['min']
                         elif choice == "5":
-                            new_value = float(input("╰─▸ Enter new maximum break time (minutes): "))
-                            CONFIG['break']['max'] = new_value * 60
+                            new_value = float(input("╰─▸ Enter new maximum break time (minutes, ≥0): "))
+                            if new_value < 0:
+                                raise ValueError("Break time cannot be negative")
+                            if new_value * 60 < self.config['break']['min']:
+                                raise ValueError(f"Max break must be ≥ min break ({self.config['break']['min']/60:.1f} min)")
+                            self.config['break']['max'] = new_value * 60
                         elif choice == "6":
-                            new_value = int(input("╰─▸ Enter new maximum retries: "))
-                            CONFIG['max_retries'] = new_value
+                            new_value = int(input("╰─▸ Enter new maximum retries (≥1): "))
+                            if new_value < 1:
+                                raise ValueError("Must retry at least once")
+                            self.config['max_retries'] = new_value
                         elif choice == "7":
-                            new_value = int(input("╰─▸ Enter new retry delay (seconds): "))
-                            CONFIG['retry_delay'] = new_value
+                            new_value = int(input("╰─▸ Enter new retry delay (seconds, ≥1): "))
+                            if new_value < 1:
+                                raise ValueError("Retry delay must be at least 1 second")
+                            self.config['retry_delay'] = new_value
 
                         self.save_config()
                         print(f"\n{Fore.GREEN}✓ Setting updated successfully!{Style.RESET_ALL}")
@@ -924,7 +1012,7 @@ class InstagramUnliker:
 
         if choice in presets:
             for key, value in presets[choice].items():
-                CONFIG[key] = value
+                self.config[key] = value
             self.save_config()
             names = {"1": "SAFE", "2": "MODERATE", "3": "FAST", "4": "AGGRESSIVE", "5": "YOLO"}
             print(f"\n{Fore.GREEN}✓ Switched to {names[choice]} mode{Style.RESET_ALL}")
@@ -934,15 +1022,9 @@ class InstagramUnliker:
 
     def check_system_requirements(self) -> bool:
         """Check if system meets all requirements."""
-        try:
-            import psutil
-            os_name = platform.system()
-            logging.info(f"Operating System: {os_name}")
-            return True
-        except ImportError:
-            logging.error("psutil not installed. Run: pip install -r requirements.txt")
-            print(f"{Fore.RED}[✗] Missing dependencies. Run: pip install -r requirements.txt{Style.RESET_ALL}")
-            return False
+        os_name = platform.system()
+        logging.info(f"Operating System: {os_name}")
+        return True
 
     def check_dependencies(self) -> bool:
         """Check and validate all required dependencies."""

@@ -3,6 +3,5 @@ ensta==5.2.9
 tqdm==4.67.1
 colorama==0.4.6
 requests==2.32.3
-psutil==7.2.2
 pyotp==2.9.0
 python-dotenv==1.2.2
