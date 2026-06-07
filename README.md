@@ -59,6 +59,20 @@ python3 instaregretam.py
 
 The script uses [ensta](https://github.com/diezo/Ensta) to authenticate and obtain a session, then passes that session to [instagrapi](https://github.com/subzeroid/instagrapi) to perform the unlike operations. Your credentials are stored locally in the `accounts/` directory and are only used to establish a session with Instagram.
 
+## Example Output
+
+```
+🔄 Unliking posts:   0%|▋                | 85/18403 [ETA: 45:41:47]
+16:26:51 [INFO] your_username [200] POST https://i.instagram.com/api/v1/media/xxxxx/unlike/
+  ✓ 86/18403 — @some_user — reel/abc123/
+🔄 Unliking posts:   0%|▋                | 86/18403 [ETA: 41:37:27]
+16:26:59 [INFO] your_username [200] POST https://i.instagram.com/api/v1/media/xxxxx/unlike/
+  ✓ 87/18403 — @another_user — reel/def456/
+🔄 Unliking posts:   0%|▊                | 87/18403 [ETA: 41:04:58]
+16:27:06 [INFO] your_username [200] POST https://i.instagram.com/api/v1/media/xxxxx/unlike/
+  ✓ 88/18403 — @cool_account — p/ghi789/
+```
+
 ## Features
 
 - **Works with 2FA** — supports TOTP authenticator apps
