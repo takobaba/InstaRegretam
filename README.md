@@ -117,6 +117,28 @@ After the first successful login, the session is saved to `accounts/<username>_s
 
 If the saved session expires, the script automatically falls back to a fresh login via ensta and saves the new session.
 
+### Manual Session Setup
+
+If the automatic login fails (Instagram sometimes blocks programmatic logins), you can provide your session cookie manually:
+
+1. Log into Instagram in your browser (Chrome/Firefox)
+2. Open DevTools (`F12` or `Cmd+Option+I`)
+3. Go to **Application** or **Storage** → **Cookies** → `https://www.instagram.com`
+4. Find the cookie named `sessionid` and copy its value
+5. Run this from the project directory:
+
+```bash
+python3 -c "
+from instagrapi import Client
+cl = Client()
+cl.login_by_sessionid('YOUR_SESSION_ID_HERE')
+cl.dump_settings('accounts/<your_username>_session.json')
+print(f'Saved session for: {cl.account_info().username}')
+"
+```
+
+The script will pick up this session on the next run. You only need to do this once — the session stays valid for weeks/months as long as you don't log out.
+
 ### 2FA Support
 
 If your account has two-factor authentication enabled (recommended), add your TOTP secret key when setting up your account in the script. This is the same key your authenticator app uses — the script generates the 2FA code automatically so you don't need to enter it manually each time.

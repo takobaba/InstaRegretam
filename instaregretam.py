@@ -430,7 +430,7 @@ class InstagramUnliker:
                     try:
                         cl.load_settings(session_file)
                         cl.login_by_sessionid(cl.settings.get('authorization_data', {}).get('sessionid', ''))
-                        cl.get_timeline_feed()
+                        cl.account_info()
                         logged_in = True
                         print(f"{Fore.GREEN}✓ Resumed saved session{Style.RESET_ALL}")
                     except Exception:
