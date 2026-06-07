@@ -1,4 +1,4 @@
-# 📱 InstaMassUnliker
+# 📱 InstaRegretam
 
 > Mass unlike your Instagram posts safely. Supports the latest Instagram data export format, auto-excludes people you follow, and includes anti-ban protections.
 
@@ -37,7 +37,7 @@ git clone https://github.com/takobaba/InstaRegretam.git
 cd InstaRegretam
 
 # Install dependencies (requires Python 3.14+)
-pip install -r requirements.txt
+pip install -e .
 
 # Copy your export files
 cp /path/to/liked_posts.json .
@@ -85,7 +85,7 @@ The script uses [ensta](https://github.com/diezo/Ensta) to authenticate and obta
   - Random breaks to mimic human behavior
   - Exponential backoff on errors
   - Auto-stop on action block detection
-- **Progress tracking** — saves after each unlike, resume anytime
+- **Progress tracking** — atomic saves after each unlike, resume anytime (safe to Ctrl+C)
 - **New export format support** — handles both old (`string_list_data`) and new (`label_values`) Instagram data exports
 
 ## Speed Modes

@@ -11,7 +11,11 @@ ensta-session.json
 logs/
 __pycache__/
 venv/
+.venv/
+instaregretam/
+*.egg-info/
 *.pyc
+*.json.tmp
 
 # OS
 .DS_Store

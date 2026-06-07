@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Instagram Mass Unliker — Erase your digital footprint."""
+"""InstaRegretam — Erase your digital footprint."""
 
 import os
 import sys
@@ -48,8 +48,8 @@ DEFAULT_CONFIG = {
 
 class InstagramUnliker:
     def __init__(self):
-        """Initialize the Instagram Unliker application."""
-        logging.info("Starting Instagram Unliker application...")
+        """Initialize the InstaRegretam application."""
+        logging.info("Starting InstaRegretam...")
 
         self.config_file = "config.json"
         self.accounts_dir = Path("accounts")
@@ -503,13 +503,29 @@ class InstagramUnliker:
         return filtered_posts, is_list_format
 
     def _save_progress(self, posts_list: list, is_list_format: bool):
-        """Save remaining posts back to liked_posts.json."""
+        """Save remaining posts back to liked_posts.json atomically.
+
+        Writes to a temp file first, then renames — so an interrupt can never
+        leave a half-written liked_posts.json.
+        """
+        import tempfile
+
         if is_list_format:
             save_data = posts_list
         else:
             save_data = {"likes_media_likes": posts_list}
-        with open('liked_posts.json', 'w') as f:
-            json.dump(save_data, f, indent=4)
+
+        # Write to temp file in same directory (ensures same filesystem for rename)
+        fd, tmp_path = tempfile.mkstemp(dir='.', suffix='.json.tmp')
+        try:
+            with os.fdopen(fd, 'w') as f:
+                json.dump(save_data, f, indent=4)
+            os.replace(tmp_path, 'liked_posts.json')
+        except Exception:
+            # Clean up temp file on failure
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
 
     def _get_speed_label(self) -> str:
         """Get human-readable label for current speed mode."""
@@ -742,7 +758,7 @@ class InstagramUnliker:
         """Display interactive menu."""
         while True:
             print(f"\n{Fore.CYAN}{Style.BRIGHT}╔{'═' * 46}╗")
-            print(_center_text_in_box(f"{Style.BRIGHT}Instagram Mass Unliker{Style.RESET_ALL}{Fore.CYAN}{Style.BRIGHT}"))
+            print(_center_text_in_box(f"{Style.BRIGHT}InstaRegretam{Style.RESET_ALL}{Fore.CYAN}{Style.BRIGHT}"))
             print(_center_text_in_box(f"{Style.BRIGHT}Erase your digital footprint{Style.RESET_ALL}{Fore.CYAN}{Style.BRIGHT}"))
             print(f"╚{'═' * 46}╝{Style.RESET_ALL}")
 
@@ -805,7 +821,7 @@ class InstagramUnliker:
                 elif choice == "7":
                     self.change_speed_mode()
                 elif choice == "0":
-                    print(f"\n{Fore.GREEN}✨ Thanks for using Instagram Unliker!")
+                    print(f"\n{Fore.GREEN}✨ Thanks for using InstaRegretam!")
                     print(f"👋 Have a great day!{Style.RESET_ALL}")
                     break
                 else:
@@ -813,7 +829,7 @@ class InstagramUnliker:
                     time.sleep(1)
 
             except KeyboardInterrupt:
-                print(f"\n\n{Fore.GREEN}✨ Thanks for using Instagram Unliker!")
+                print(f"\n\n{Fore.GREEN}✨ Thanks for using InstaRegretam!")
                 print(f"👋 Have a great day!{Style.RESET_ALL}")
                 break
             except Exception as e:
@@ -1034,7 +1050,7 @@ class InstagramUnliker:
             return True
         except ImportError:
             logging.error("ensta library not found")
-            print(f"{Fore.RED}[✗] ensta library not found. Run: pip install -r requirements.txt{Style.RESET_ALL}")
+            print(f"{Fore.RED}[✗] ensta library not found. Run: pip install -e .{Style.RESET_ALL}")
             return False
         except Exception as e:
             logging.error(f"Error importing ensta: {e}")
@@ -1097,7 +1113,7 @@ def _menu_line(number: str, text: str, box_width: int = 40) -> str:
 def main():
     """Main entry point."""
     try:
-        print("\nWelcome to Instagram Mass Unliker!")
+        print("\nWelcome to InstaRegretam!")
         print("Checking system requirements...")
 
         unliker = InstagramUnliker()
