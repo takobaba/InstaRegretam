@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-unlikr = "instaregretam:main"
+instaregretam = "instaregretam:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]
