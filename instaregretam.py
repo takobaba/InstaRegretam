@@ -560,8 +560,9 @@ class InstagramUnliker:
                         short_url = href.replace('https://www.instagram.com/', '')
                         progress_bar.write(f"  {Fore.GREEN}✓{Style.RESET_ALL} {unliked_count}/{total_posts} — @{display_owner} — {short_url}")
 
+                        speed_label = {2: "AGGRESSIVE", 3: "FAST", 10: "MODERATE", 30: "SAFE"}.get(CONFIG['delay']['min'], "CUSTOM")
                         with open(request_log, 'a') as log:
-                            log.write(f"{datetime.now().isoformat()} | UNLIKE | {media_id} | @{display_owner} | {short_url} | OK\n")
+                            log.write(f"{datetime.now().isoformat()} | UNLIKE | {media_id} | @{display_owner} | {short_url} | OK | {speed_label}\n")
 
                         # Save progress
                         if is_list_format:
@@ -659,7 +660,9 @@ class InstagramUnliker:
             # Show current speed mode
             delay_min = CONFIG['delay']['min']
             delay_max = CONFIG['delay']['max']
-            if delay_min <= 5:
+            if delay_min <= 2:
+                mode_label = f"{Fore.RED}💀 AGGRESSIVE{Style.RESET_ALL}"
+            elif delay_min <= 5:
                 mode_label = f"{Fore.RED}⚡ FAST{Style.RESET_ALL}"
             elif delay_min <= 15:
                 mode_label = f"{Fore.YELLOW}🚀 MODERATE{Style.RESET_ALL}"
