@@ -92,22 +92,66 @@ The script uses [ensta](https://github.com/diezo/Ensta) to authenticate and obta
 
 | Mode | Delay | Hourly Rate | Daily Rate | Est. Time (18k posts) |
 |------|-------|-------------|------------|-----------------------|
-| 🐢 Safe | 30-120s | 50/hr | 400/day | ~50 days |
-| 🚀 Moderate | 10-30s | 100/hr | 1000/day | ~19 days |
+| 🐢 Safe | 30-120s | 60/hr | 400/day | ~50 days |
+| 🚀 Moderate | 10-30s | 120/hr | 1000/day | ~19 days |
 | ⚡ Fast | 3-8s | 200/hr | 2000/day | ~10 days |
 | 💀 Aggressive | 2-5s | 500/hr | 5000/day | ~4 days |
+| 🔥 YOLO | 0.5-1s | No cap | 18000/day | ~1 day |
 
 Higher speeds increase risk of temporary action blocks (24-48h cooldown, not a ban).
 
+## Authentication
+
+The login flow uses a two-library approach:
+
+1. **[ensta](https://github.com/diezo/Ensta)** handles the initial authentication, including 2FA (TOTP). It establishes a session with Instagram and returns a session ID.
+2. **[instagrapi](https://github.com/subzeroid/instagrapi)** receives that session ID and performs the actual unlike operations via Instagram's mobile private API.
+
+### Session Persistence
+
+After the first successful login, the session is saved to `accounts/<username>_session.json`. On subsequent runs, the script reloads the saved session instead of logging in fresh. This is important because:
+
+- Instagram treats fresh logins from automation as suspicious
+- Reusing a session looks like a normal phone that stays logged in
+- Avoids unnecessary 2FA prompts on every run
+
+If the saved session expires, the script automatically falls back to a fresh login via ensta and saves the new session.
+
+### 2FA Support
+
+If your account has two-factor authentication enabled (recommended), add your TOTP secret key when setting up your account in the script. This is the same key your authenticator app uses — the script generates the 2FA code automatically so you don't need to enter it manually each time.
+
+### Credentials Storage
+
+- Username, password, and TOTP key are stored locally in `accounts/<username>.json`
+- Session data is stored in `accounts/<username>_session.json`
+- The `accounts/` directory is gitignored — nothing is ever uploaded
+- Credentials are only used to establish a session with Instagram
+
 ## How It Avoids Bans
 
-- Uses Instagram's mobile private API (same as the app)
-- Randomized delays between actions
-- Hourly/daily caps prevent velocity spikes
-- Detects rate-limit responses and stops immediately
-- Exponential cooldown on consecutive errors
+Following [instagrapi best practices](https://subzeroid.github.io/instagrapi/usage-guide/best-practices.html):
 
-**Worst case:** Temporary action block (24-48h). The script detects this and exits with a warning. Your progress is saved.
+- **Session persistence** — reuses saved sessions instead of logging in fresh each run
+- **Built-in library delay** — `delay_range` set on the instagrapi client as a safety net
+- **Randomized delays** — jittered sleep between actions to mimic human behavior
+- **Hourly/daily caps** — prevent velocity spikes
+- **Specific error handling** — catches `ClientThrottledError`, `PleaseWaitFewMinutes`, and `FeedbackRequired` directly
+- **Immediate exit on block** — does not retry rate-limited requests (retrying extends the block)
+- **Exponential backoff** — on transient errors only
+- **Residential IP** — designed to run from your home network, not a datacenter
+
+### What happens if you get blocked?
+
+The script detects action blocks immediately, logs the event, saves your progress, and exits. Your account is **not banned** — it's a temporary restriction (24-48h). When you run again after the cooldown, it resumes exactly where it left off.
+
+### Instagram rate limit hierarchy
+
+1. **`PleaseWaitFewMinutes`** — soft limit, clears in 5-30 min. Script exits immediately.
+2. **`FeedbackRequired`** — harder block, lasts 6-48 hours. Script exits immediately.
+3. **`ClientThrottledError`** (HTTP 429) — IP-level throttle. Script exits immediately.
+
+⚠️ Three soft limits in one hour can escalate to a `FeedbackRequired` block. That's why the script exits on the first detection rather than retrying.
 
 ## Requirements
 

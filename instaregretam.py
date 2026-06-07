@@ -416,16 +416,35 @@ class InstagramUnliker:
             try:
                 from ensta import Web
                 from instagrapi import Client as InstaClient
+                from instagrapi.exceptions import LoginRequired, ClientThrottledError, PleaseWaitFewMinutes, FeedbackRequired
 
-                # Login with ensta (handles 2FA well)
-                totp_key = account_data.get('totp_token', None)
-                web = Web(account_data['username'], account_data['password'], totp_token=totp_key)
-                session_id = {c.name: c.value for c in web.request_session.cookies}.get('sessionid', '')
-
-                # Use session with instagrapi (has working unlike)
                 cl = InstaClient()
-                cl.login_by_sessionid(session_id)
-                print(f"{Fore.GREEN}✓ Successfully logged in{Style.RESET_ALL}")
+                cl.delay_range = [1, 3]
+                session_file = f"accounts/{username}_session.json"
+
+                # Try loading saved session first
+                logged_in = False
+                if os.path.exists(session_file):
+                    try:
+                        cl.load_settings(session_file)
+                        cl.login_by_sessionid(cl.settings.get('authorization_data', {}).get('sessionid', ''))
+                        cl.get_timeline_feed()
+                        logged_in = True
+                        print(f"{Fore.GREEN}✓ Resumed saved session{Style.RESET_ALL}")
+                    except Exception:
+                        logging.info("Saved session expired, doing fresh login")
+
+                # Fresh login via ensta if session didn't work
+                if not logged_in:
+                    totp_key = account_data.get('totp_token', None)
+                    web = Web(account_data['username'], account_data['password'], totp_token=totp_key)
+                    session_id = {c.name: c.value for c in web.request_session.cookies}.get('sessionid', '')
+                    cl = InstaClient()
+                    cl.delay_range = [1, 3]
+                    cl.login_by_sessionid(session_id)
+                    cl.dump_settings(session_file)
+                    print(f"{Fore.GREEN}✓ Fresh login successful (session saved){Style.RESET_ALL}")
+
                 account_info = cl.account_info()
                 print(f"{Fore.GREEN}Logged in as: {Fore.CYAN}{account_info.username}{Style.RESET_ALL}")
             except Exception as e:
@@ -542,8 +561,15 @@ class InstagramUnliker:
                                     raise Exception(f"Unlike returned False for {href}")
                                 consecutive_errors = 0
                                 break
+                            except (ClientThrottledError, PleaseWaitFewMinutes, FeedbackRequired) as e:
+                                # Immediate stop — do not retry these
+                                raise
                             except Exception as e:
-                                logging.warning(f"Failed to unlike (attempt {retry + 1}/{CONFIG['max_retries']}): {e}")
+                                error_msg = str(e)
+                                status_code = getattr(e, 'status_code', None) or re.search(r'\b(\d{3})\b', error_msg)
+                                if status_code and hasattr(status_code, 'group'):
+                                    status_code = status_code.group(1)
+                                logging.warning(f"Failed to unlike (attempt {retry + 1}/{CONFIG['max_retries']}): [HTTP {status_code}] {e}")
                                 if retry < CONFIG['max_retries'] - 1:
                                     backoff = CONFIG['retry_delay'] * (2 ** retry)
                                     time.sleep(backoff)
@@ -560,7 +586,7 @@ class InstagramUnliker:
                         short_url = href.replace('https://www.instagram.com/', '')
                         progress_bar.write(f"  {Fore.GREEN}✓{Style.RESET_ALL} {unliked_count}/{total_posts} — @{display_owner} — {short_url}")
 
-                        speed_label = {2: "AGGRESSIVE", 3: "FAST", 10: "MODERATE", 30: "SAFE"}.get(CONFIG['delay']['min'], "CUSTOM")
+                        speed_label = {2: "AGGRESSIVE", 3: "FAST", 10: "MODERATE", 30: "SAFE"}.get(CONFIG['delay']['min'], "YOLO" if CONFIG['delay']['min'] < 1 else "CUSTOM")
                         with open(request_log, 'a') as log:
                             log.write(f"{datetime.now().isoformat()} | UNLIKE | {media_id} | @{display_owner} | {short_url} | OK | {speed_label}\n")
 
@@ -589,8 +615,14 @@ class InstagramUnliker:
 
                         # Detect action block
                         block_keywords = ['action blocked', 'action_blocked', 'temporarily blocked',
-                                          'try again later', 'limit', 'challenge_required', 'checkpoint']
+                                          'try again later', 'limit', 'challenge_required', 'checkpoint',
+                                          'login_required', 'consent_required', 'feedback_required',
+                                          'sentry_block', 'spam', '429', '403', '401',
+                                          'please wait', 'restricted', 'suspicious']
                         if any(kw in str(e).lower() for kw in block_keywords):
+                            speed_label = {2: "AGGRESSIVE", 3: "FAST", 10: "MODERATE", 30: "SAFE"}.get(CONFIG['delay']['min'], "YOLO" if CONFIG['delay']['min'] < 1 else "CUSTOM")
+                            with open(request_log, 'a') as log:
+                                log.write(f"{datetime.now().isoformat()} | BLOCKED | {href} | {str(e)[:200]} | speed={speed_label} | unliked={unliked_count}\n")
                             progress_bar.close()
                             print(f"\n{Fore.RED}{'='*60}")
                             print("🚨 ACTION BLOCKED — Instagram has rate-limited your account!")
@@ -660,7 +692,9 @@ class InstagramUnliker:
             # Show current speed mode
             delay_min = CONFIG['delay']['min']
             delay_max = CONFIG['delay']['max']
-            if delay_min <= 2:
+            if delay_min < 1:
+                mode_label = f"{Fore.MAGENTA}🔥 YOLO{Style.RESET_ALL}"
+            elif delay_min <= 2:
                 mode_label = f"{Fore.RED}💀 AGGRESSIVE{Style.RESET_ALL}"
             elif delay_min <= 5:
                 mode_label = f"{Fore.RED}⚡ FAST{Style.RESET_ALL}"
@@ -868,6 +902,7 @@ class InstagramUnliker:
         print(f"  {Fore.YELLOW}2. 🚀 MODERATE{Style.RESET_ALL}  — 10-30s delay, 120/hr, 1000/day (~19 days)")
         print(f"  {Fore.RED}3. ⚡ FAST{Style.RESET_ALL}      — 3-8s delay, 200/hr, 2000/day (~10 days)")
         print(f"  {Fore.RED}4. 💀 AGGRESSIVE{Style.RESET_ALL} — 2-5s delay, 500/hr, 5000/day (~4 days)")
+        print(f"  {Fore.MAGENTA}5. 🔥 YOLO{Style.RESET_ALL}      — 0.5-1s delay, no hourly cap, 18000/day (~1 day)")
         print("\n  0. Cancel")
 
         choice = input(f"\n{Style.BRIGHT}Select mode: {Style.RESET_ALL}").strip()
@@ -881,13 +916,15 @@ class InstagramUnliker:
                   "break": {"min": 120, "max": 300, "probability": 0.02}},
             "4": {"delay": {"min": 2, "max": 5}, "hourly_limit": 500, "daily_limit": 5000,
                   "break": {"min": 60, "max": 180, "probability": 0.01}},
+            "5": {"delay": {"min": 0.5, "max": 1}, "hourly_limit": 99999, "daily_limit": 18000,
+                  "break": {"min": 0, "max": 0, "probability": 0}},
         }
 
         if choice in presets:
             for key, value in presets[choice].items():
                 CONFIG[key] = value
             self.save_config()
-            names = {"1": "SAFE", "2": "MODERATE", "3": "FAST", "4": "AGGRESSIVE"}
+            names = {"1": "SAFE", "2": "MODERATE", "3": "FAST", "4": "AGGRESSIVE", "5": "YOLO"}
             print(f"\n{Fore.GREEN}✓ Switched to {names[choice]} mode{Style.RESET_ALL}")
             time.sleep(1)
         elif choice != "0":
