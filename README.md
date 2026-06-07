@@ -96,7 +96,7 @@ The script uses [ensta](https://github.com/diezo/Ensta) to authenticate and obta
 | 🚀 Moderate | 10-30s | 120/hr | 1000/day | ~19 days |
 | ⚡ Fast | 3-8s | 200/hr | 2000/day | ~10 days |
 | 💀 Aggressive | 2-5s | 500/hr | 5000/day | ~4 days |
-| 🔥 YOLO | 0.5-1s | No cap | 18000/day | ~1 day |
+| 🔥 YOLO | 1-3s (library only) | No cap | 18000/day | ~1 day |
 
 Higher speeds increase risk of temporary action blocks (24-48h cooldown, not a ban).
 

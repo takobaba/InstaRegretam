@@ -902,7 +902,7 @@ class InstagramUnliker:
         print(f"  {Fore.YELLOW}2. 🚀 MODERATE{Style.RESET_ALL}  — 10-30s delay, 120/hr, 1000/day (~19 days)")
         print(f"  {Fore.RED}3. ⚡ FAST{Style.RESET_ALL}      — 3-8s delay, 200/hr, 2000/day (~10 days)")
         print(f"  {Fore.RED}4. 💀 AGGRESSIVE{Style.RESET_ALL} — 2-5s delay, 500/hr, 5000/day (~4 days)")
-        print(f"  {Fore.MAGENTA}5. 🔥 YOLO{Style.RESET_ALL}      — 0.5-1s delay, no hourly cap, 18000/day (~1 day)")
+        print(f"  {Fore.MAGENTA}5. 🔥 YOLO{Style.RESET_ALL}      — library delay only (1-3s), no hourly cap, 18000/day (~1 day)")
         print("\n  0. Cancel")
 
         choice = input(f"\n{Style.BRIGHT}Select mode: {Style.RESET_ALL}").strip()
@@ -916,7 +916,7 @@ class InstagramUnliker:
                   "break": {"min": 120, "max": 300, "probability": 0.02}},
             "4": {"delay": {"min": 2, "max": 5}, "hourly_limit": 500, "daily_limit": 5000,
                   "break": {"min": 60, "max": 180, "probability": 0.01}},
-            "5": {"delay": {"min": 0.5, "max": 1}, "hourly_limit": 99999, "daily_limit": 18000,
+            "5": {"delay": {"min": 0, "max": 0}, "hourly_limit": 99999, "daily_limit": 18000,
                   "break": {"min": 0, "max": 0, "probability": 0}},
         }
 
