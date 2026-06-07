@@ -1,0 +1,19 @@
+# Personal data
+accounts/
+config.json
+liked_posts.json
+following.json
+ensta-session.json
+.env
+*.zip
+
+# Runtime
+logs/
+__pycache__/
+venv/
+*.pyc
+
+# OS
+.DS_Store
+*.code-workspace
+packageInfo
