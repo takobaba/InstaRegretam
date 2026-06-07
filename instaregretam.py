@@ -371,6 +371,8 @@ class InstagramUnliker:
             accounts.append(env_user)
         if self.accounts_dir.exists():
             for f in self.accounts_dir.glob("*.json"):
+                if '_session' in f.stem:
+                    continue
                 if f.stem not in accounts:
                     accounts.append(f.stem)
         return accounts
