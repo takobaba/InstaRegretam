@@ -530,9 +530,10 @@ class InstagramUnliker:
     def _get_speed_label(self) -> str:
         """Get human-readable label for current speed mode."""
         delay_min = self.config['delay']['min']
-        return {2: "AGGRESSIVE", 3: "FAST", 10: "MODERATE", 30: "SAFE"}.get(
-            delay_min, "YOLO" if delay_min < 1 else "CUSTOM"
-        )
+        if delay_min < 1:
+            return "DIRECT"
+        else:
+            return "SAFE"
 
     def _handle_action_block(self, error, href: str, unliked_count: int,
                              account_data: dict, account_file: Optional[Path]):
@@ -779,15 +780,9 @@ class InstagramUnliker:
             delay_min = self.config['delay']['min']
             delay_max = self.config['delay']['max']
             if delay_min < 1:
-                mode_label = f"{Fore.MAGENTA}🔥 YOLO{Style.RESET_ALL}"
-            elif delay_min <= 2:
-                mode_label = f"{Fore.RED}💀 AGGRESSIVE{Style.RESET_ALL}"
-            elif delay_min <= 5:
-                mode_label = f"{Fore.RED}⚡ FAST{Style.RESET_ALL}"
-            elif delay_min <= 15:
-                mode_label = f"{Fore.YELLOW}🚀 MODERATE{Style.RESET_ALL}"
+                mode_label = f"{Fore.MAGENTA}🔥 DIRECT{Style.RESET_ALL}"
             else:
-                mode_label = f"{Fore.GREEN}🐢 SAFE{Style.RESET_ALL}"
+                mode_label = f"{Fore.GREEN}🛡️  SAFE{Style.RESET_ALL}"
             print(f"\n{Fore.CYAN}Speed:{Style.RESET_ALL} {mode_label} ({delay_min}-{delay_max}s delay, {self.config.get('hourly_limit', 60)}/hr, {self.config.get('daily_limit', 400)}/day)")
 
             print(f"\n{Fore.CYAN}Available Actions:{Style.RESET_ALL}")
@@ -1004,33 +999,25 @@ class InstagramUnliker:
         """Let user pick a speed preset."""
         print(f"\n{Fore.CYAN}⚡ Speed Mode Selection{Style.RESET_ALL}")
         print("=" * 50)
-        print(f"\n  {Fore.GREEN}1. 🐢 SAFE{Style.RESET_ALL}      — 30-120s delay, 60/hr, 400/day (~50 days)")
-        print(f"  {Fore.YELLOW}2. 🚀 MODERATE{Style.RESET_ALL}  — 10-30s delay, 120/hr, 1000/day (~19 days)")
-        print(f"  {Fore.RED}3. ⚡ FAST{Style.RESET_ALL}      — 3-8s delay, 200/hr, 2000/day (~10 days)")
-        print(f"  {Fore.RED}4. 💀 AGGRESSIVE{Style.RESET_ALL} — 2-5s delay, 500/hr, 5000/day (~4 days)")
-        print(f"  {Fore.MAGENTA}5. 🔥 YOLO{Style.RESET_ALL}      — library delay only (1-3s), no hourly cap, 18000/day (~1 day)")
+        print(f"\n  {Fore.MAGENTA}1. 🔥 DIRECT{Style.RESET_ALL}  — library delay only (1-3s), no hourly cap, 18000/day")
+        print(f"  {Fore.GREEN}2. 🛡️  SAFE{Style.RESET_ALL}    — 3-8s delay, 200/hr, 2000/day")
+        print(f"\n  {Fore.YELLOW}Tip: Use DIRECT for old/established accounts, SAFE for newer ones.{Style.RESET_ALL}")
         print("\n  0. Cancel")
 
         choice = input(f"\n{Style.BRIGHT}Select mode: {Style.RESET_ALL}").strip()
 
         presets = {
-            "1": {"delay": {"min": 30, "max": 120}, "hourly_limit": 60, "daily_limit": 400,
-                  "break": {"min": 600, "max": 1800, "probability": 0.05}},
-            "2": {"delay": {"min": 10, "max": 30}, "hourly_limit": 120, "daily_limit": 1000,
-                  "break": {"min": 300, "max": 600, "probability": 0.03}},
-            "3": {"delay": {"min": 3, "max": 8}, "hourly_limit": 200, "daily_limit": 2000,
-                  "break": {"min": 120, "max": 300, "probability": 0.02}},
-            "4": {"delay": {"min": 2, "max": 5}, "hourly_limit": 500, "daily_limit": 5000,
-                  "break": {"min": 60, "max": 180, "probability": 0.01}},
-            "5": {"delay": {"min": 0, "max": 0}, "hourly_limit": 99999, "daily_limit": 18000,
+            "1": {"delay": {"min": 0, "max": 0}, "hourly_limit": 99999, "daily_limit": 18000,
                   "break": {"min": 0, "max": 0, "probability": 0}},
+            "2": {"delay": {"min": 3, "max": 8}, "hourly_limit": 200, "daily_limit": 2000,
+                  "break": {"min": 120, "max": 300, "probability": 0.02}},
         }
 
         if choice in presets:
             for key, value in presets[choice].items():
                 self.config[key] = value
             self.save_config()
-            names = {"1": "SAFE", "2": "MODERATE", "3": "FAST", "4": "AGGRESSIVE", "5": "YOLO"}
+            names = {"1": "DIRECT", "2": "SAFE"}
             print(f"\n{Fore.GREEN}✓ Switched to {names[choice]} mode{Style.RESET_ALL}")
             time.sleep(1)
         elif choice != "0":
