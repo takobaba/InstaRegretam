@@ -7,7 +7,7 @@
 
 ## How It Works
 
-1. Export your Instagram data (JSON format)
+1. Export your Instagram data (JSON or HTML format)
 2. Run the script — it reads your liked posts and unlikes them via Instagram's private API
 3. Posts from people you follow are automatically excluded
 4. Built-in rate limiting prevents bans
@@ -47,7 +47,7 @@ python3 instaregretam.py
 
 ### 4. First Run
 
-1. **Add your account** (option 1) — enter your username and password
+1. **Set up your session** — follow [Manual Session Setup](#manual-session-setup) below
 2. **Import following list** (option 4 → 4) — auto-excludes everyone you follow
 3. **Pick a speed mode** (option 7)
 4. **Start unliking** (option 3)
@@ -57,17 +57,17 @@ python3 instaregretam.py
 - **Works with 2FA** — supports TOTP authenticator apps
 - **Auto-exclude following** — import your `following.json` to skip people you follow
 - **Manual exclude list** — add/remove specific users
-- **Speed presets** — Safe, Moderate, Fast, Aggressive, YOLO
+- **Speed presets** — Direct and Safe modes
 - **Anti-ban protections** — configurable delays, hourly/daily caps, random breaks, exponential backoff, auto-stop on block detection
 - **Progress tracking** — atomic saves after each unlike, safe to Ctrl+C, resumes where you left off
-- **Both export formats** — handles old (`string_list_data`) and new (`label_values`) Instagram data exports
+- **Both export formats** — handles JSON and HTML Instagram data exports
 
 ## Speed Modes
 
 | Mode | Delay | Hourly | Daily | Best For |
 |------|-------|--------|-------|----------|
-| � Direct | 1-3s (library only) | No cap | 18000/day | Old/established accounts |
-| �️ Safe | 3-8s | 200/hr | 2000/day | Newer accounts |
+| 🔥 Direct | 1-3s (library only) | No cap | 18000/day | Old/established accounts |
+| 🛡️ Safe | 3-8s | 500/hr | 3000/day | Newer accounts |
 
 **Direct** makes API calls as fast as the library allows — no added delay. Use this if your account is old and well-established. **Safe** adds delays between requests to reduce the chance of blocks on newer accounts.
 

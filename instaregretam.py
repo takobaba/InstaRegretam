@@ -322,6 +322,8 @@ class InstagramUnliker:
             'following.json',
             'followers_and_following/following.json',
             'connections/followers_and_following/following.json',
+            'following.html',
+            'connections/followers_and_following/following.html',
         ]
 
         following_file = None
@@ -344,26 +346,30 @@ class InstagramUnliker:
             following_file = custom
 
         try:
-            with open(following_file, 'r') as f:
-                data = json.load(f)
-
-            following_usernames = set()
-            if isinstance(data, list):
-                entries = data
-            elif isinstance(data, dict):
-                entries = data.get('relationships_following', data.get('following', []))
+            # Handle HTML exports
+            if following_file.endswith('.html'):
+                following_usernames = self._parse_html_following(following_file)
             else:
-                entries = []
+                with open(following_file, 'r') as f:
+                    data = json.load(f)
 
-            for entry in entries:
-                username = entry.get('title', '').lower()
-                if not username:
-                    try:
-                        username = entry['string_list_data'][0]['value'].lower()
-                    except KeyError, IndexError, TypeError:
-                        continue
-                if username:
-                    following_usernames.add(username)
+                following_usernames = set()
+                if isinstance(data, list):
+                    entries = data
+                elif isinstance(data, dict):
+                    entries = data.get('relationships_following', data.get('following', []))
+                else:
+                    entries = []
+
+                for entry in entries:
+                    username = entry.get('title', '').lower()
+                    if not username:
+                        try:
+                            username = entry['string_list_data'][0]['value'].lower()
+                        except (KeyError, IndexError, TypeError):
+                            continue
+                    if username:
+                        following_usernames.add(username)
 
             if not following_usernames:
                 print(f"{Fore.YELLOW}No usernames found in {following_file}{Style.RESET_ALL}")
@@ -466,27 +472,55 @@ class InstagramUnliker:
         print(f"{Fore.GREEN}✓ Fresh login successful (session saved){Style.RESET_ALL}")
         return cl
 
+    def _parse_html_liked_posts(self, filepath: str) -> list:
+        """Parse liked_posts.html export into JSON-compatible format."""
+        with open(filepath, 'r') as f:
+            content = f.read()
+        urls = re.findall(r'href="(https://www\.instagram\.com/(?:p|reel)/[^"]+)"', content)
+        usernames = re.findall(r'<td class="_a6_q">Username</td><td class="_2piu _a6_r">([^<]+)</td>', content)
+        posts = []
+        for i, url in enumerate(urls):
+            posts.append({
+                "title": "",
+                "string_list_data": [{"href": url, "value": usernames[i] if i < len(usernames) else "", "timestamp": 0}]
+            })
+        return posts
+
+    def _parse_html_following(self, filepath: str) -> set:
+        """Parse following.html export into a set of usernames."""
+        with open(filepath, 'r') as f:
+            content = f.read()
+        usernames = re.findall(r'instagram\.com/_u/([^"<>\s]+)', content)
+        return set(u.lower() for u in usernames)
+
     def _load_posts(self) -> tuple[Optional[list], Optional[bool]]:
-        """Load and filter liked posts from JSON export.
+        """Load and filter liked posts from JSON or HTML export.
 
         Returns (posts_list, is_list_format) or (None, None) on failure.
         """
-        if not os.path.exists('liked_posts.json'):
-            logging.error("liked_posts.json file not found")
-            print(f"{Fore.RED}[✗] liked_posts.json file not found. Please ensure it exists.{Style.RESET_ALL}")
-            return None, None
+        # Try JSON first, then HTML
+        if os.path.exists('liked_posts.json'):
+            with open('liked_posts.json', 'r') as f:
+                liked_data = json.load(f)
 
-        with open('liked_posts.json', 'r') as f:
-            liked_data = json.load(f)
+            if isinstance(liked_data, list):
+                posts_list = liked_data
+                is_list_format = True
+            elif isinstance(liked_data, dict) and liked_data.get('likes_media_likes'):
+                posts_list = liked_data['likes_media_likes']
+                is_list_format = False
+            else:
+                print(f"{Fore.YELLOW}[!] No liked posts found in JSON file!{Style.RESET_ALL}")
+                return None, None
 
-        if isinstance(liked_data, list):
-            posts_list = liked_data
+        elif os.path.exists('liked_posts.html'):
+            posts_list = self._parse_html_liked_posts('liked_posts.html')
+            if not posts_list:
+                return None, None
             is_list_format = True
-        elif isinstance(liked_data, dict) and liked_data.get('likes_media_likes'):
-            posts_list = liked_data['likes_media_likes']
-            is_list_format = False
+            print(f"{Fore.GREEN}✓ Parsed {len(posts_list)} posts from liked_posts.html{Style.RESET_ALL}")
         else:
-            print(f"{Fore.YELLOW}[!] No liked posts found in JSON file!{Style.RESET_ALL}")
+            print(f"{Fore.RED}[✗] No liked_posts.json or liked_posts.html found.{Style.RESET_ALL}")
             return None, None
 
         # Filter out excluded users
@@ -546,8 +580,9 @@ class InstagramUnliker:
         print(f"\n{Fore.RED}{'='*60}")
         print("🚨 ACTION BLOCKED — Instagram has rate-limited your account!")
         print(f"{'='*60}{Style.RESET_ALL}")
+        resume_time = datetime.now() + timedelta(hours=12)
         print(f"{Fore.YELLOW}• Your account is NOT banned, just temporarily restricted")
-        print("• Wait 24-48 hours before running again")
+        print(f"• Try again after: {resume_time.strftime('%b %d, %I:%M %p')}")
         print("• Progress has been saved — it will resume where you left off")
         print(f"• Unliked so far this session: {unliked_count}{Style.RESET_ALL}")
 
@@ -574,6 +609,10 @@ class InstagramUnliker:
 
         print(f"{Fore.BLUE}Found {total_posts} posts to unlike{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}⚡ Limits: {hourly_limit}/hour, {daily_limit}/day{Style.RESET_ALL}")
+
+        speed_label = self._get_speed_label()
+        with open(request_log, 'a') as log:
+            log.write(f"{datetime.now().isoformat()} | SESSION_START | speed={speed_label} | remaining={total_posts}\n")
 
         progress_bar = tqdm(
             total=total_posts,
@@ -637,6 +676,9 @@ class InstagramUnliker:
                             raise
                         except Exception as e:
                             error_msg = str(e)
+                            # If it's a 429 wrapped in RetryError, stop immediately
+                            if '429' in error_msg or 'too many' in error_msg.lower():
+                                raise
                             status_code = getattr(e, 'status_code', None) or re.search(r'\b(\d{3})\b', error_msg)
                             if status_code and hasattr(status_code, 'group'):
                                 status_code = status_code.group(1)
@@ -676,7 +718,7 @@ class InstagramUnliker:
                     account_data['last_error'] = str(e)
 
                     with open(request_log, 'a') as log:
-                        log.write(f"{datetime.now().isoformat()} | ERROR | {href or 'unknown'} | {str(e)[:100]}\n")
+                        log.write(f"{datetime.now().isoformat()} | ERROR | {href or 'unknown'} | {type(e).__name__}: {str(e)[:200]}\n")
 
                     # Detect action block
                     block_keywords = ['action blocked', 'action_blocked', 'temporarily blocked',
@@ -747,6 +789,9 @@ class InstagramUnliker:
             print(f"{Fore.BLUE}[*] Total unliked: {unliked_count}{Style.RESET_ALL}")
             if skipped_count > 0:
                 print(f"{Fore.YELLOW}[*] Skipped (excluded/invalid): {skipped_count}{Style.RESET_ALL}")
+
+            with open(request_log, 'a') as log:
+                log.write(f"{datetime.now().isoformat()} | SESSION_END | unliked={unliked_count} | skipped={skipped_count}\n")
 
         except json.JSONDecodeError as e:
             logging.error(f"Invalid JSON format: {e}")
@@ -1000,7 +1045,7 @@ class InstagramUnliker:
         print(f"\n{Fore.CYAN}⚡ Speed Mode Selection{Style.RESET_ALL}")
         print("=" * 50)
         print(f"\n  {Fore.MAGENTA}1. 🔥 DIRECT{Style.RESET_ALL}  — library delay only (1-3s), no hourly cap, 18000/day")
-        print(f"  {Fore.GREEN}2. 🛡️  SAFE{Style.RESET_ALL}    — 3-8s delay, 200/hr, 2000/day")
+        print(f"  {Fore.GREEN}2. 🛡️  SAFE{Style.RESET_ALL}    — 3-8s delay, 500/hr, 3000/day")
         print(f"\n  {Fore.YELLOW}Tip: Use DIRECT for old/established accounts, SAFE for newer ones.{Style.RESET_ALL}")
         print("\n  0. Cancel")
 
@@ -1009,8 +1054,8 @@ class InstagramUnliker:
         presets = {
             "1": {"delay": {"min": 0, "max": 0}, "hourly_limit": 99999, "daily_limit": 18000,
                   "break": {"min": 0, "max": 0, "probability": 0}},
-            "2": {"delay": {"min": 3, "max": 8}, "hourly_limit": 200, "daily_limit": 2000,
-                  "break": {"min": 120, "max": 300, "probability": 0.02}},
+            "2": {"delay": {"min": 3, "max": 8}, "hourly_limit": 500, "daily_limit": 3000,
+                  "break": {"min": 60, "max": 120, "probability": 0.02}},
         }
 
         if choice in presets:
@@ -1051,6 +1096,13 @@ def _get_post_owner(post: dict) -> str:
     """Extract owner username from both old and new export formats."""
     owner = post.get('title', '').lower()
     if not owner:
+        # Check string_list_data value (HTML-converted format)
+        try:
+            val = post['string_list_data'][0].get('value', '')
+            if val:
+                return val.lower()
+        except (KeyError, IndexError, TypeError):
+            pass
         for lv in post.get('label_values', []):
             if lv.get('title') == 'Owner':
                 for d in lv.get('dict', []):
