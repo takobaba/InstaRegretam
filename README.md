@@ -58,28 +58,26 @@ python3 instaregretam.py
 - **Auto-exclude following** — import your `following.json` to skip people you follow
 - **Manual exclude list** — add/remove specific users
 - **Speed presets** — Direct and Safe modes
-- **Anti-ban protections** — configurable delays, hourly/daily caps, random breaks, exponential backoff, auto-stop on block detection
+- **Anti-ban protections** — rate limiting, random breaks, auto-stop on block detection
 - **Progress tracking** — atomic saves after each unlike, safe to Ctrl+C, resumes where you left off
 - **Both export formats** — handles JSON and HTML Instagram data exports
 
 ## Speed Modes
 
-| Mode | Delay | Hourly | Daily | Best For |
-|------|-------|--------|-------|----------|
-| 🔥 Direct | 1-3s (library only) | No cap | 18000/day | Old/established accounts |
-| 🛡️ Safe | 3-8s | 500/hr | 3000/day | Newer accounts |
+| Mode | Delay | Hourly Rate |
+|------|-------|-------------|
+| 🔥 Direct | 1-3s | ~900/hr |
+| 🛡️ Safe | 3-8s | ~500/hr |
 
-**Direct** makes API calls as fast as the library allows — no added delay. Use this if your account is old and well-established. **Safe** adds delays between requests to reduce the chance of blocks on newer accounts.
+**Direct** is as fast as the library allows. **Safe** adds delays to stay under Instagram's rate limits without triggering blocks.
 
 ## Authentication
 
-> ⚠️ **Note:** Automatic login via ensta is currently broken. Use the [Manual Session Setup](#manual-session-setup) method below for now.
+> ⚠️ **Note:** Automatic login via ensta is currently broken. Use the [Manual Session Setup](#manual-session-setup) method below.
 
-Sessions are saved to `accounts/<username>_session.json` and reused across runs. If a session expires, the script automatically does a fresh login.
+Sessions are saved to `accounts/<username>_session.json` (gitignored) and reused across runs.
 
 ### Manual Session Setup
-
-If automatic login fails, you can provide your session cookie manually:
 
 1. Log into Instagram in your browser
 2. DevTools → **Application** → **Cookies** → `https://www.instagram.com`
@@ -95,12 +93,6 @@ cl.dump_settings('accounts/<your_username>_session.json')
 print(f'Saved session for: {cl.account_info().username}')
 "
 ```
-
-### Credentials Storage
-
-- Stored locally in `accounts/` (gitignored)
-- Only used to establish a session with Instagram
-- Nothing is ever uploaded
 
 ## What Happens If You Get Blocked?
 

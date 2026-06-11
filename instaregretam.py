@@ -1044,7 +1044,7 @@ class InstagramUnliker:
         """Let user pick a speed preset."""
         print(f"\n{Fore.CYAN}⚡ Speed Mode Selection{Style.RESET_ALL}")
         print("=" * 50)
-        print(f"\n  {Fore.MAGENTA}1. 🔥 DIRECT{Style.RESET_ALL}  — library delay only (1-3s), no hourly cap, 18000/day")
+        print(f"\n  {Fore.MAGENTA}1. 🔥 DIRECT{Style.RESET_ALL}  — 1-3s delay, ~900/hr, no daily cap")
         print(f"  {Fore.GREEN}2. 🛡️  SAFE{Style.RESET_ALL}    — 3-8s delay, 500/hr, 3000/day")
         print(f"\n  {Fore.YELLOW}Tip: Use DIRECT for old/established accounts, SAFE for newer ones.{Style.RESET_ALL}")
         print("\n  0. Cancel")
