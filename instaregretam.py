@@ -183,12 +183,14 @@ class InstagramUnliker:
         """Add an Instagram account."""
         print(f"\n{Fore.CYAN}➕ Add Instagram Account{Style.RESET_ALL}")
         print("-" * 40)
+        print(f"{Fore.YELLOW}Get your session ID from browser cookies:")
+        print(f"  DevTools → Application → Cookies → instagram.com → sessionid{Style.RESET_ALL}\n")
 
         username = input(f"{Style.BRIGHT}Username: {Style.RESET_ALL}").strip()
-        password = input(f"{Style.BRIGHT}Password: {Style.RESET_ALL}").strip()
+        session_id = input(f"{Style.BRIGHT}Session ID: {Style.RESET_ALL}").strip()
 
-        if not username or not password:
-            print(f"{Fore.RED}Username and password are required{Style.RESET_ALL}")
+        if not username or not session_id:
+            print(f"{Fore.RED}Username and session ID are required{Style.RESET_ALL}")
             return
 
         self.accounts_dir.mkdir(exist_ok=True)
@@ -199,9 +201,20 @@ class InstagramUnliker:
             if override != 'y':
                 return
 
+        # Verify session works
+        try:
+            from instagrapi import Client as InstaClient
+            cl = InstaClient()
+            cl.delay_range = [1, 3]
+            cl.login_by_sessionid(session_id)
+            cl.dump_settings(f"accounts/{username}_session.json")
+            print(f"{Fore.GREEN}✓ Session verified for @{cl.account_info().username}{Style.RESET_ALL}")
+        except Exception as e:
+            print(f"{Fore.RED}[✗] Session ID invalid: {e}{Style.RESET_ALL}")
+            return
+
         account_data = {
             "username": username,
-            "password": password,
             "last_run": None,
             "total_unliked": 0,
             "last_error": None,
@@ -413,19 +426,15 @@ class InstagramUnliker:
     # --- Unlike workflow (broken into smaller methods) ---
 
     def _load_credentials(self, username: str) -> tuple[Optional[dict], Optional[Path]]:
-        """Load account credentials from .env or accounts/ JSON file.
+        """Load account data from .env or accounts/ JSON file.
 
         Returns (account_data, account_file) or (None, None) on failure.
         """
         env_user = os.getenv('INSTAGRAM_USERNAME')
-        env_pass = os.getenv('INSTAGRAM_PASSWORD')
-        env_totp = os.getenv('INSTAGRAM_TOTP_KEY')
 
-        if env_user and env_pass and env_user == username:
+        if env_user and env_user == username:
             account_data = {
                 'username': env_user,
-                'password': env_pass,
-                'totp_token': env_totp,
                 'total_unliked': 0,
             }
             return account_data, None
@@ -439,11 +448,10 @@ class InstagramUnliker:
         return account_data, account_file
 
     def _login(self, account_data: dict, username: str):
-        """Authenticate with Instagram via saved session or fresh login.
+        """Authenticate with Instagram via saved session or .env session ID.
 
         Returns an authenticated instagrapi Client, or raises on failure.
         """
-        from ensta import Web
         from instagrapi import Client as InstaClient
 
         cl = InstaClient()
@@ -459,18 +467,19 @@ class InstagramUnliker:
                 print(f"{Fore.GREEN}✓ Resumed saved session{Style.RESET_ALL}")
                 return cl
             except Exception:
-                logging.info("Saved session expired, doing fresh login")
+                logging.info("Saved session expired, trying .env")
 
-        # Fresh login via ensta
-        totp_key = account_data.get('totp_token', None)
-        web = Web(account_data['username'], account_data['password'], totp_token=totp_key)
-        session_id = {c.name: c.value for c in web.request_session.cookies}.get('sessionid', '')
-        cl = InstaClient()
-        cl.delay_range = [1, 3]
-        cl.login_by_sessionid(session_id)
-        cl.dump_settings(session_file)
-        print(f"{Fore.GREEN}✓ Fresh login successful (session saved){Style.RESET_ALL}")
-        return cl
+        # Try session ID from .env
+        env_session_id = os.getenv('INSTAGRAM_SESSION_ID')
+        if env_session_id:
+            cl = InstaClient()
+            cl.delay_range = [1, 3]
+            cl.login_by_sessionid(env_session_id)
+            cl.dump_settings(session_file)
+            print(f"{Fore.GREEN}✓ Logged in via .env session ID (session saved){Style.RESET_ALL}")
+            return cl
+
+        raise Exception("No valid session found. Add your session ID to .env or run 'Add Account' (option 1).")
 
     def _parse_html_liked_posts(self, filepath: str) -> list:
         """Parse liked_posts.html export into JSON-compatible format."""
@@ -1077,16 +1086,16 @@ class InstagramUnliker:
     def check_dependencies(self) -> bool:
         """Check and validate all required dependencies."""
         try:
-            import ensta
-            logging.info("Successfully imported ensta")
+            import instagrapi
+            logging.info("Successfully imported instagrapi")
             return True
         except ImportError:
-            logging.error("ensta library not found")
-            print(f"{Fore.RED}[✗] ensta library not found. Run: pip install -e .{Style.RESET_ALL}")
+            logging.error("instagrapi library not found")
+            print(f"{Fore.RED}[✗] instagrapi library not found. Run: pip install -r requirements.txt{Style.RESET_ALL}")
             return False
         except Exception as e:
-            logging.error(f"Error importing ensta: {e}")
-            print(f"{Fore.RED}[✗] Error importing ensta: {e}{Style.RESET_ALL}")
+            logging.error(f"Error importing instagrapi: {e}")
+            print(f"{Fore.RED}[✗] Error importing instagrapi: {e}{Style.RESET_ALL}")
             return False
 
 

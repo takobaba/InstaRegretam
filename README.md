@@ -47,14 +47,13 @@ python3 instaregretam.py
 
 ### 4. First Run
 
-1. **Set up your session** — follow [Manual Session Setup](#manual-session-setup) below
+1. **Set up your session** — follow [Authentication](#authentication) above
 2. **Import following list** (option 4 → 4) — auto-excludes everyone you follow
 3. **Pick a speed mode** (option 7)
 4. **Start unliking** (option 3)
 
 ## Features
 
-- **Works with 2FA** — supports TOTP authenticator apps
 - **Auto-exclude following** — import your `following.json` to skip people you follow
 - **Manual exclude list** — add/remove specific users
 - **Speed presets** — Direct and Safe modes
@@ -73,16 +72,21 @@ python3 instaregretam.py
 
 ## Authentication
 
-> ⚠️ **Note:** Automatic login via ensta is currently broken. Use the [Manual Session Setup](#manual-session-setup) method below.
-
-Sessions are saved to `accounts/<username>_session.json` (gitignored) and reused across runs.
-
-### Manual Session Setup
+### Option 1: `.env` file (recommended)
 
 1. Log into Instagram in your browser
-2. DevTools → **Application** → **Cookies** → `https://www.instagram.com`
+2. DevTools (`F12`) → **Application** → **Storage** → **Cookies** → `https://www.instagram.com` (Chrome) or **Storage** → **Cookies** (Firefox)
 3. Copy the `sessionid` cookie value
-4. Run:
+4. Create a `.env` file in the project directory:
+
+```
+INSTAGRAM_USERNAME=your_username
+INSTAGRAM_SESSION_ID=your_session_id_here
+```
+
+That's it. The script reads from `.env` on startup and saves the session for reuse.
+
+### Option 2: Manual command
 
 ```bash
 python3 -c "
@@ -93,6 +97,8 @@ cl.dump_settings('accounts/<your_username>_session.json')
 print(f'Saved session for: {cl.account_info().username}')
 "
 ```
+
+Sessions persist across runs — you only need to do this once until the session expires (weeks/months).
 
 ## What Happens If You Get Blocked?
 

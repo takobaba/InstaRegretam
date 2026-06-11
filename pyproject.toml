@@ -7,10 +7,8 @@ license = {text = "MIT"}
 requires-python = ">=3.14"
 dependencies = [
     "instagrapi==2.8.13",
-    "ensta==5.2.9",
     "tqdm==4.67.1",
     "colorama==0.4.6",
-    "pyotp==2.9.0",
     "python-dotenv==1.2.2",
 ]
 
