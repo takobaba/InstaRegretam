@@ -106,6 +106,15 @@ The script detects action blocks immediately, saves progress, and exits. Your ac
 
 ⚠️ The script exits on the first rate limit signal rather than retrying — retrying extends the block.
 
+## Stats
+
+Check your progress anytime (even while the unliker is running):
+
+```bash
+python3 stats.py            # summary + daily breakdown + last hour
+python3 stats.py --hourly   # full hourly timeline
+```
+
 ## ⚠️ Disclaimer
 
 This tool uses Instagram's private API which is against their Terms of Service. Use at your own risk.

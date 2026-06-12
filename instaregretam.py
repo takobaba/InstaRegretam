@@ -37,7 +37,6 @@ DEFAULT_CONFIG = {
     "accounts": {},
     "excluded_users": [],
     "hourly_limit": 60,
-    "daily_limit": 400,
     "log_level": "INFO",
     "max_retries": 3,
     "retry_delay": 60,
@@ -101,10 +100,11 @@ class InstagramUnliker:
 
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.INFO)
-        logging.getLogger('instagrapi').setLevel(logging.WARNING)
         root_logger.handlers.clear()
         root_logger.addHandler(file_handler)
         root_logger.addHandler(console_handler)
+
+        # instagrapi logs go to file only (configured fully in _login)
 
         atexit.register(self._cleanup_logs)
         logging.info("Logging system initialized")
@@ -173,7 +173,6 @@ class InstagramUnliker:
 
         # Limits must be positive
         self.config['hourly_limit'] = max(1, int(self.config.get('hourly_limit', 60)))
-        self.config['daily_limit'] = max(1, int(self.config.get('daily_limit', 400)))
 
         # Retry settings must be positive
         self.config['max_retries'] = max(1, int(self.config.get('max_retries', 3)))
@@ -454,8 +453,21 @@ class InstagramUnliker:
         """
         from instagrapi import Client as InstaClient
 
+        # Create file-only logger for instagrapi (suppress from console, keep in unliker.log)
+        _insta_logger = logging.getLogger('instagrapi')
+        _insta_logger.handlers.clear()
+        _insta_logger.propagate = False
+        _insta_logger.setLevel(logging.INFO)
+        _fh = RotatingFileHandler(
+            self.logs_dir / "unliker.log", maxBytes=5*1024*1024,
+            backupCount=5, encoding='utf-8'
+        )
+        _fh.setFormatter(logging.Formatter(
+            '%(asctime)s [%(levelname)s] %(message)s', datefmt='%H:%M:%S'
+        ))
+        _insta_logger.addHandler(_fh)
+
         cl = InstaClient()
-        cl.delay_range = [1, 3]
         session_file = f"accounts/{username}_session.json"
 
         # Try loading saved session first
@@ -610,14 +622,12 @@ class InstagramUnliker:
         unliked_count = 0
         skipped_count = 0
         hourly_limit = self.config.get('hourly_limit', 60)
-        daily_limit = self.config.get('daily_limit', 400)
         hourly_count = 0
         hourly_start = time.time()
         consecutive_errors = 0
         request_log = self.logs_dir / "requests.log"
 
         print(f"{Fore.BLUE}Found {total_posts} posts to unlike{Style.RESET_ALL}")
-        print(f"{Fore.YELLOW}⚡ Limits: {hourly_limit}/hour, {daily_limit}/day{Style.RESET_ALL}")
 
         speed_label = self._get_speed_label()
         with open(request_log, 'a') as log:
@@ -626,16 +636,11 @@ class InstagramUnliker:
         progress_bar = tqdm(
             total=total_posts,
             desc="🔄 Unliking posts",
-            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [ETA: {remaining}]'
+            bar_format='{l_bar}{bar:30}| {n_fmt}/{total_fmt} [ETA: {remaining}]'
         )
 
         try:
             while posts_list and self.running:
-                # Check daily limit
-                if unliked_count >= daily_limit:
-                    progress_bar.write(f"{Fore.YELLOW}⚠️  Daily limit ({daily_limit}) reached. Stopping to protect your account.{Style.RESET_ALL}")
-                    break
-
                 # Check hourly limit
                 if hourly_count >= hourly_limit:
                     elapsed = time.time() - hourly_start
@@ -837,7 +842,7 @@ class InstagramUnliker:
                 mode_label = f"{Fore.MAGENTA}🔥 DIRECT{Style.RESET_ALL}"
             else:
                 mode_label = f"{Fore.GREEN}🛡️  SAFE{Style.RESET_ALL}"
-            print(f"\n{Fore.CYAN}Speed:{Style.RESET_ALL} {mode_label} ({delay_min}-{delay_max}s delay, {self.config.get('hourly_limit', 60)}/hr, {self.config.get('daily_limit', 400)}/day)")
+            print(f"\n{Fore.CYAN}Speed:{Style.RESET_ALL} {mode_label} (~{'900' if delay_min < 1 else '500'}/hr)")
 
             print(f"\n{Fore.CYAN}Available Actions:{Style.RESET_ALL}")
             print(f"╭{'─' * 40}╮")
@@ -1061,9 +1066,9 @@ class InstagramUnliker:
         choice = input(f"\n{Style.BRIGHT}Select mode: {Style.RESET_ALL}").strip()
 
         presets = {
-            "1": {"delay": {"min": 0, "max": 0}, "hourly_limit": 99999, "daily_limit": 18000,
+            "1": {"delay": {"min": 0, "max": 0}, "hourly_limit": 99999,
                   "break": {"min": 0, "max": 0, "probability": 0}},
-            "2": {"delay": {"min": 3, "max": 8}, "hourly_limit": 500, "daily_limit": 3000,
+            "2": {"delay": {"min": 3, "max": 8}, "hourly_limit": 99999,
                   "break": {"min": 60, "max": 120, "probability": 0.02}},
         }
 
