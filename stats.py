@@ -146,13 +146,8 @@ def main():
     print()
     print_summary(unlikes, blocks, errors, sessions)
     print_daily_breakdown(unlikes, blocks)
-
-    if '--hourly' in sys.argv or '-h' in sys.argv:
-        print_hourly_breakdown(unlikes, blocks)
-    else:
-        print_current_session(unlikes, blocks)
-        print("  Tip: run with --hourly for full hourly breakdown")
-        print()
+    print_hourly_breakdown(unlikes, blocks)
+    print_current_session(unlikes, blocks)
 
 
 if __name__ == "__main__":
