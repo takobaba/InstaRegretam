@@ -6,6 +6,7 @@ following.json
 ensta-session.json
 .env
 *.zip
+dm_participants.txt
 
 # Runtime
 logs/
